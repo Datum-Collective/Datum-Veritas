@@ -1,0 +1,21 @@
+organization_id,department_id,organization_name,department_name,organization_type,region
+D01,D01,State Works Division - North,State Works Division - North,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D02,D02,Urban Infrastructure Division - South,Urban Infrastructure Division - South,STATE_PROCUREMENT_ENTITY,KA-SOUTH
+D03,D03,State Health Procurement Division,State Health Procurement Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D04,D04,State Education Procurement Division,State Education Procurement Division,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D05,D05,Rural Development Division,Rural Development Division,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D06,D06,Water Resources Division,Water Resources Division,STATE_PROCUREMENT_ENTITY,KA-SOUTH
+D07,D07,Power Systems Division,Power Systems Division,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D08,D08,Municipal Services Division,Municipal Services Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D09,D09,State Transport Division,State Transport Division,STATE_PROCUREMENT_ENTITY,KA-SOUTH
+D10,D10,Medical Services Procurement Division,Medical Services Procurement Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D11,D11,Urban Technology Division,Urban Technology Division,STATE_PROCUREMENT_ENTITY,KA-BENGALURU
+D12,D12,Housing Infrastructure Division,Housing Infrastructure Division,STATE_PROCUREMENT_ENTITY,KA-SOUTH
+D13,D13,Tourism Infrastructure Division,Tourism Infrastructure Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D14,D14,Agricultural Infrastructure Division,Agricultural Infrastructure Division,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D15,D15,Energy Procurement Division,Energy Procurement Division,STATE_PROCUREMENT_ENTITY,KA-SOUTH
+D16,D16,Infrastructure Development Division,Infrastructure Development Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D17,D17,Higher Education Procurement Division,Higher Education Procurement Division,STATE_PROCUREMENT_ENTITY,KA-BENGALURU
+D18,D18,Industrial Development Division,Industrial Development Division,STATE_PROCUREMENT_ENTITY,KA-CENTRAL
+D19,D19,Forest Infrastructure Division,Forest Infrastructure Division,STATE_PROCUREMENT_ENTITY,KA-NORTH
+D20,D20,Public Health Engineering Division,Public Health Engineering Division,STATE_PROCUREMENT_ENTITY,KA-SOUTH

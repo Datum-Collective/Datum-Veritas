@@ -415,75 +415,6 @@ def generate_vendors(
     return pd.DataFrame(rows)
 
 
-def force_scenario_vendor_markets(
-    vendors: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Ensure every controlled scenario vendor is genuinely qualified for
-    the market in which its scenario is planted.
-    """
-
-    assignments = {
-        "CIVIL_MAINTENANCE": [
-            "V0001",
-            "V0024",
-            "V0091",
-            "V0051",
-            "V0052",
-            "V0053",
-        ],
-        "LAB_EQUIPMENT": [
-            "V0010",
-            "V0020",
-        ],
-        "ROAD_CONSTRUCTION": [
-            "V0042",
-            "V0043",
-            "V0071",
-            "V0072",
-            "V0073",
-            "V0074",
-        ],
-        "ELECTRICAL_EQUIPMENT": [
-            "V0061",
-            "V0062",
-            "V0063",
-        ],
-    }
-
-    secondary = {
-        "CIVIL_MAINTENANCE": "ROAD_CONSTRUCTION",
-        "LAB_EQUIPMENT": "MEDICAL_SUPPLIES",
-        "ROAD_CONSTRUCTION": "CIVIL_MAINTENANCE",
-        "ELECTRICAL_EQUIPMENT": "IT_SERVICES",
-    }
-
-    existing_ids = set(vendors["vendor_id"])
-
-    for category, vendor_ids in assignments.items():
-
-        for vendor_id in vendor_ids:
-
-            if vendor_id not in existing_ids:
-                raise ValueError(
-                    f"Scenario vendor {vendor_id} does not exist."
-                )
-
-            mask = vendors["vendor_id"] == vendor_id
-
-            vendors.loc[
-                mask,
-                "primary_category",
-            ] = category
-
-            vendors.loc[
-                mask,
-                "secondary_category",
-            ] = secondary[category]
-
-    return vendors
-
-
 def build_market_pools(
     vendors: pd.DataFrame,
 ) -> dict[str, set[str]]:
@@ -522,66 +453,23 @@ def build_market_pools(
             candidates.head(target)["vendor_id"]
         )
 
-        # Controlled scenarios require their participating vendors to
-        # genuinely belong to the effective market pool. This does NOT
-        # enlarge the pool: required vendors replace the weakest selected
-        # suppliers when necessary.
-        required_by_category = {
-            "CIVIL_MAINTENANCE": [
-                "V0001",
-                "V0024",
-                "V0091",
-                "V0051",
-                "V0052",
-                "V0053",
-            ],
-            "LAB_EQUIPMENT": [
-                "V0010",
-                "V0020",
-            ],
-            "ROAD_CONSTRUCTION": [
-                "V0042",
-                "V0043",
-                "V0071",
-                "V0072",
-                "V0073",
-                "V0074",
-            ],
-            "ELECTRICAL_EQUIPMENT": [
-                "V0061",
-                "V0062",
-                "V0063",
-            ],
-        }
+        # The legitimate specialized-market scenario must exist inside
+        # the actual LAB_EQUIPMENT supplier pool.
+        if category == "LAB_EQUIPMENT":
 
-        required = required_by_category.get(
-            category,
-            [],
-        )
+            required = ["V0010", "V0020"]
 
-        candidate_ids = set(
-            candidates["vendor_id"]
-        )
+            for vendor_id in required:
 
-        for vendor_id in required:
+                if vendor_id not in candidates["vendor_id"].values:
+                    continue
 
-            if vendor_id not in candidate_ids:
-                raise ValueError(
-                    f"Required scenario vendor {vendor_id} "
-                    f"is not qualified for {category}."
-                )
+                if vendor_id not in selected:
 
-            if vendor_id not in selected:
+                    if selected:
+                        selected.pop()
 
-                if not selected:
-                    raise ValueError(
-                        f"Cannot place {vendor_id} into empty "
-                        f"{category} supplier pool."
-                    )
-
-                selected.pop()
-
-                selected.append(vendor_id)
+                    selected.append(vendor_id)
 
         pools[category] = set(selected)
 
@@ -1238,60 +1126,10 @@ def add_truth(
     )
 
 
-def configure_scenario_vendor_markets(
-    vendors: pd.DataFrame,
-):
-    """
-    Ensure every controlled-scenario vendor is genuinely
-    qualified for the market used by its scenario.
-
-    scenario_truth.csv remains evaluation-only; these are normal
-    vendor market attributes visible to the detector.
-    """
-
-    scenario_markets = {
-        "V0001": "CIVIL_MAINTENANCE",
-        "V0024": "CIVIL_MAINTENANCE",
-        "V0091": "CIVIL_MAINTENANCE",
-
-        "V0010": "LAB_EQUIPMENT",
-        "V0020": "LAB_EQUIPMENT",
-
-        "V0042": "ROAD_CONSTRUCTION",
-        "V0043": "ROAD_CONSTRUCTION",
-
-        "V0051": "CIVIL_MAINTENANCE",
-        "V0052": "CIVIL_MAINTENANCE",
-        "V0053": "CIVIL_MAINTENANCE",
-
-        "V0061": "ELECTRICAL_EQUIPMENT",
-        "V0062": "ELECTRICAL_EQUIPMENT",
-        "V0063": "ELECTRICAL_EQUIPMENT",
-
-        "V0071": "ROAD_CONSTRUCTION",
-        "V0072": "ROAD_CONSTRUCTION",
-        "V0073": "ROAD_CONSTRUCTION",
-        "V0074": "ROAD_CONSTRUCTION",
-    }
-
-    for vendor_id, category in scenario_markets.items():
-        mask = vendors["vendor_id"] == vendor_id
-
-        if not mask.any():
-            raise ValueError(
-                f"Scenario vendor {vendor_id} does not exist."
-            )
-
-        vendors.loc[mask, "primary_category"] = category
-
-    return vendors
-
-
 def plant_repeated_bidder_network(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     target_vendors = [
@@ -1300,20 +1138,13 @@ def plant_repeated_bidder_network(
         "V0091",
     ]
 
-    pool = set(
-        market_pools["CIVIL_MAINTENANCE"]
-    )
-
-    missing = set(target_vendors) - pool
-
-    if missing:
-        raise ValueError(
-            "Repeated bidder scenario vendors missing from "
-            f"CIVIL_MAINTENANCE pool: {sorted(missing)}"
-        )
-
     eligible = tenders[
-        tenders["category"] == "CIVIL_MAINTENANCE"
+        tenders["category"].isin(
+            [
+                "ROAD_CONSTRUCTION",
+                "CIVIL_MAINTENANCE",
+            ]
+        )
     ]
 
     selected = eligible.sample(
@@ -1396,7 +1227,6 @@ def plant_legitimate_specialized_market(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     # This is deliberately legitimate.
@@ -1407,20 +1237,9 @@ def plant_legitimate_specialized_market(
         "V0020",
     ]
 
-    pool = set(
-        market_pools["LAB_EQUIPMENT"]
-    )
-
-    missing = set(target_vendors) - pool
-
-    if missing:
-        raise ValueError(
-            "Specialized-market vendors missing from "
-            f"LAB_EQUIPMENT pool: {sorted(missing)}"
-        )
-
     eligible = tenders[
-        tenders["category"] == "LAB_EQUIPMENT"
+        tenders["category"]
+        == "LAB_EQUIPMENT"
     ]
 
     selected = eligible.sample(
@@ -1476,26 +1295,18 @@ def plant_cover_bidding(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     dominant = "V0042"
     cover = "V0043"
 
-    pool = set(
-        market_pools["ROAD_CONSTRUCTION"]
-    )
-
-    missing = {dominant, cover} - pool
-
-    if missing:
-        raise ValueError(
-            "Cover-bidding vendors missing from "
-            f"ROAD_CONSTRUCTION pool: {sorted(missing)}"
-        )
-
     eligible = tenders[
-        tenders["category"] == "ROAD_CONSTRUCTION"
+        tenders["category"].isin(
+            [
+                "ROAD_CONSTRUCTION",
+                "BUILDING_CONSTRUCTION",
+            ]
+        )
     ]
 
     selected = eligible.sample(
@@ -1570,7 +1381,6 @@ def plant_bid_rotation(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     vendors = [
@@ -1579,20 +1389,9 @@ def plant_bid_rotation(
         "V0053",
     ]
 
-    pool = set(
-        market_pools["CIVIL_MAINTENANCE"]
-    )
-
-    missing = set(vendors) - pool
-
-    if missing:
-        raise ValueError(
-            "Rotation vendors missing from "
-            f"CIVIL_MAINTENANCE pool: {sorted(missing)}"
-        )
-
     eligible = tenders[
-        tenders["category"] == "CIVIL_MAINTENANCE"
+        tenders["category"]
+        == "CIVIL_MAINTENANCE"
     ].sort_values(
         "publication_date"
     )
@@ -1665,7 +1464,6 @@ def plant_geographic_allocation(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     allocation = {
@@ -1673,18 +1471,6 @@ def plant_geographic_allocation(
         "V0062": "KA-SOUTH",
         "V0063": "KA-CENTRAL",
     }
-
-    pool = set(
-        market_pools["ELECTRICAL_EQUIPMENT"]
-    )
-
-    missing = set(allocation.keys()) - pool
-
-    if missing:
-        raise ValueError(
-            "Geographic-allocation vendors missing from "
-            f"ELECTRICAL_EQUIPMENT pool: {sorted(missing)}"
-        )
 
     for vendor_id, region in allocation.items():
 
@@ -1745,7 +1531,6 @@ def plant_price_coordination(
     rng: random.Random,
     bids: pd.DataFrame,
     tenders: pd.DataFrame,
-    market_pools: dict[str, list[str]],
     truth_rows: list[dict],
 ):
     vendors = [
@@ -1755,20 +1540,9 @@ def plant_price_coordination(
         "V0074",
     ]
 
-    pool = set(
-        market_pools["ROAD_CONSTRUCTION"]
-    )
-
-    missing = set(vendors) - pool
-
-    if missing:
-        raise ValueError(
-            "Price-coordination vendors missing from "
-            f"ROAD_CONSTRUCTION pool: {sorted(missing)}"
-        )
-
     eligible = tenders[
-        tenders["category"] == "ROAD_CONSTRUCTION"
+        tenders["category"]
+        == "ROAD_CONSTRUCTION"
     ].head(18)
 
     for _, tender in eligible.iterrows():
@@ -1831,26 +1605,6 @@ def plant_price_coordination(
     )
 
 
-def recalculate_bid_ranks(
-    bids: pd.DataFrame,
-):
-    """Recalculate ranks after all scenario bids are injected."""
-
-    if bids.empty:
-        return bids
-
-    bids["rank"] = (
-        bids.groupby("tender_id")["bid_amount"]
-        .rank(
-            method="min",
-            ascending=True,
-        )
-        .astype(int)
-    )
-
-    return bids
-
-
 # ============================================================
 # MAIN
 # ============================================================
@@ -1879,14 +1633,6 @@ def main():
     vendors = generate_vendors(
         rng,
         count=550,
-    )
-
-    vendors = configure_scenario_vendor_markets(
-        vendors,
-    )
-
-    vendors = force_scenario_vendor_markets(
-        vendors,
     )
 
     market_pools = build_market_pools(
@@ -1936,7 +1682,6 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
     )
 
@@ -1944,7 +1689,6 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
     )
 
@@ -1952,7 +1696,6 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
     )
 
@@ -1960,7 +1703,6 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
     )
 
@@ -1968,7 +1710,6 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
     )
 
@@ -1976,14 +1717,7 @@ def main():
         rng,
         bids,
         tenders,
-        market_pools,
         truth_rows,
-    )
-
-    # Scenario injection changes the bid set, so ranks must be
-    # recalculated before awards/contracts are regenerated.
-    bids = recalculate_bid_ranks(
-        bids,
     )
 
     # --------------------------------------------------------
@@ -1996,30 +1730,6 @@ def main():
             tenders,
             bids,
         )
-    )
-
-    # Keep tender-level metadata synchronized with the final
-    # post-scenario bid set.
-    winner_map = (
-        awards
-        .set_index("tender_id")["vendor_id"]
-    )
-
-    tenders["winner_id"] = (
-        tenders["tender_id"]
-        .map(winner_map)
-    )
-
-    tender_counts = (
-        bids.groupby("tender_id")["vendor_id"]
-        .nunique()
-    )
-
-    tenders["number_of_tenderers"] = (
-        tenders["tender_id"]
-        .map(tender_counts)
-        .fillna(0)
-        .astype(int)
     )
 
     # --------------------------------------------------------

@@ -1,0 +1,21 @@
+department_id,department_name,region
+D01,State Works Division - North,KA-NORTH
+D02,Urban Infrastructure Division - South,KA-SOUTH
+D03,State Health Procurement Division,KA-CENTRAL
+D04,State Education Procurement Division,KA-NORTH
+D05,Rural Development Division,KA-NORTH
+D06,Water Resources Division,KA-SOUTH
+D07,Power Systems Division,KA-NORTH
+D08,Municipal Services Division,KA-CENTRAL
+D09,State Transport Division,KA-SOUTH
+D10,Medical Services Procurement Division,KA-CENTRAL
+D11,Urban Technology Division,KA-BENGALURU
+D12,Housing Infrastructure Division,KA-SOUTH
+D13,Tourism Infrastructure Division,KA-CENTRAL
+D14,Agricultural Infrastructure Division,KA-NORTH
+D15,Energy Procurement Division,KA-SOUTH
+D16,Infrastructure Development Division,KA-CENTRAL
+D17,Higher Education Procurement Division,KA-BENGALURU
+D18,Industrial Development Division,KA-CENTRAL
+D19,Forest Infrastructure Division,KA-NORTH
+D20,Public Health Engineering Division,KA-SOUTH

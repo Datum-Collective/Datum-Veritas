@@ -1,0 +1,7 @@
+scenario,entities,description
+REPEATED_BIDDER_NETWORK,V0001|V0024|V0091,Three vendors repeatedly participate together across unrelated tenders.
+LEGITIMATE_SPECIALIZED_MARKET,V0010|V0020,Small specialized laboratory-equipment supplier pool creates legitimate repeated participation and winner concentration.
+COVER_BIDDING,V0042|V0043,One vendor repeatedly wins while another repeatedly participates at systematically higher prices.
+BID_ROTATION,V0051|V0052|V0053,Winning position rotates systematically among a recurring bidder group.
+GEOGRAPHIC_MARKET_ALLOCATION,V0061|V0062|V0063,Different vendors dominate geographically separated procurement markets.
+TIGHT_PRICE_CLUSTER,V0071|V0072|V0073|V0074,Multiple bids remain unusually close after normalization by tender estimate.
