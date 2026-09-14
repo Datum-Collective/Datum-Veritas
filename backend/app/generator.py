@@ -1735,8 +1735,8 @@ def plant_geographic_allocation(
     for vendor_id, region in allocation.items():
 
         eligible = tenders[
-            tenders["region"]
-            == region
+            (tenders["category"] == "ELECTRICAL_EQUIPMENT")
+            & (tenders["region"] == region)
         ].head(20)
 
         for _, tender in eligible.iterrows():
