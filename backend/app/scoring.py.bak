@@ -1,0 +1,1166 @@
+"""
+Veritas Evidence Convergence Engine.
+
+Turns independent detector outputs into auditable investigation cases.
+
+This layer does NOT:
+    - predict fraud probability
+    - label vendors corrupt
+    - make legal findings
+
+It does:
+    - normalize detector evidence
+    - preserve evidence provenance
+    - combine independent evidence families
+    - apply contextual suppression
+    - construct investigation-priority cases
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import math
+
+import pandas as pd
+
+
+BASE = Path("data/generated")
+
+
+# Evidence-family weights reflect how directly each detector represents
+# suspicious procurement behavior. They are NOT fraud probabilities.
+FAMILY_WEIGHTS = {
+    "cooccurrence": 1.00,
+    "price": 0.95,
+    "temporal": 0.85,
+    "winner_rotation": 0.80,
+    "geographic": 0.60,
+    "winner_concentration": 0.45,
+}
+
+
+def _read(name: str) -> pd.DataFrame:
+    path = BASE / name
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Missing detector output: {path}"
+        )
+
+    return pd.read_csv(path)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        value = float(value)
+
+        if not math.isfinite(value):
+            return default
+
+        return value
+
+    except (TypeError, ValueError):
+        return default
+
+
+def _clip01(value: float) -> float:
+    return max(0.0, min(1.0, _safe_float(value)))
+
+
+def _robust_normalize(series: pd.Series) -> pd.Series:
+    """
+    Robust percentile-style normalization.
+
+    The 5th and 95th percentiles prevent one extreme observation from
+    compressing the rest of the detector output.
+    """
+
+    values = pd.to_numeric(
+        series,
+        errors="coerce",
+    ).fillna(0.0)
+
+    lo = values.quantile(0.05)
+    hi = values.quantile(0.95)
+
+    if (
+        not math.isfinite(_safe_float(lo))
+        or not math.isfinite(_safe_float(hi))
+        or hi <= lo
+    ):
+        return pd.Series(
+            0.0,
+            index=series.index,
+        )
+
+    return (
+        (values - lo) / (hi - lo)
+    ).clip(0.0, 1.0)
+
+
+def _require_columns(
+    frame: pd.DataFrame,
+    columns: set[str],
+    name: str,
+) -> None:
+
+    missing = columns - set(frame.columns)
+
+    if missing:
+        raise RuntimeError(
+            f"{name} is missing required columns: "
+            f"{sorted(missing)}"
+        )
+
+
+# ---------------------------------------------------------------------
+# EVIDENCE EXTRACTION
+# ---------------------------------------------------------------------
+
+def build_evidence_records() -> pd.DataFrame:
+    """
+    Convert all detector outputs into one long-form evidence table.
+
+    Every row represents one observation contributing evidence to a
+    vendor or vendor relationship.
+    """
+
+    co = _read("cooccurrence.csv")
+    contextual = _read("contextual_cooccurrence.csv")
+    price = _read("bid_spread.csv")
+    concentration = _read("winner_concentration.csv")
+    rotation = _read("winner_rotation.csv")
+    temporal = _read("temporal_behavior.csv")
+    geographic = _read("geographic_behavior.csv")
+
+    records: list[dict] = []
+
+    # ================================================================
+    # 1. CONTEXTUALIZED CO-OCCURRENCE
+    # ================================================================
+
+    _require_columns(
+        contextual,
+        {
+            "vendor_a",
+            "vendor_b",
+            "observed_shared_tenders",
+            "enrichment_ratio",
+            "contextual_adjustment",
+            "contextual_enrichment",
+            "dominant_category",
+            "category_share",
+            "dominant_region",
+            "region_share",
+        },
+        "contextual_cooccurrence.csv",
+    )
+
+    contextual = contextual.copy()
+
+    # Contextual enrichment is the raw relationship strength after
+    # concentration/context adjustment.
+    contextual["relationship_signal"] = _robust_normalize(
+        contextual["contextual_enrichment"]
+    )
+
+    for _, row in contextual.iterrows():
+
+        a = str(row["vendor_a"])
+        b = str(row["vendor_b"])
+
+        if a == "nan" or b == "nan" or a == b:
+            continue
+
+        adjustment = _clip01(
+            row["contextual_adjustment"]
+        )
+
+        signal = _clip01(
+            _safe_float(
+                row["relationship_signal"]
+            ) * adjustment
+        )
+
+        detail = (
+            f"{int(row['observed_shared_tenders'])} shared tenders; "
+            f"{_safe_float(row['enrichment_ratio']):.2f}x raw expected "
+            f"co-occurrence; "
+            f"category concentration "
+            f"{_safe_float(row['category_share']):.0%}; "
+            f"region concentration "
+            f"{_safe_float(row['region_share']):.0%}"
+        )
+
+        for vendor, related in (
+            (a, b),
+            (b, a),
+        ):
+            records.append(
+                {
+                    "vendor_id": vendor,
+                    "related_vendor_id": related,
+                    "evidence_family": "cooccurrence",
+                    "signal": signal,
+                    "context_adjustment": adjustment,
+                    "evidence_detail": detail,
+                }
+            )
+
+    # ================================================================
+    # 2. BID PRICE BEHAVIOR
+    # ================================================================
+
+    _require_columns(
+        price,
+        {
+            "tender_id",
+            "bid_count",
+            "relative_spread",
+            "robust_z",
+            "tightness_percentile",
+            "price_evidence",
+        },
+        "bid_spread.csv",
+    )
+
+    bids = _read("bids.csv")
+
+    _require_columns(
+        bids,
+        {
+            "tender_id",
+            "vendor_id",
+        },
+        "bids.csv",
+    )
+
+    price = price.copy()
+
+    price["signal"] = _robust_normalize(
+        price["price_evidence"]
+    )
+
+    tender_vendor = bids[
+        [
+            "tender_id",
+            "vendor_id",
+        ]
+    ].drop_duplicates()
+
+    tender_vendor = tender_vendor.merge(
+        price[
+            [
+                "tender_id",
+                "signal",
+                "bid_count",
+                "relative_spread",
+                "robust_z",
+            ]
+        ],
+        on="tender_id",
+        how="inner",
+    )
+
+    for _, row in tender_vendor.iterrows():
+
+        vendor = str(row["vendor_id"])
+
+        if vendor == "nan":
+            continue
+
+        records.append(
+            {
+                "vendor_id": vendor,
+                "related_vendor_id": "",
+                "evidence_family": "price",
+                "signal": _clip01(row["signal"]),
+                "context_adjustment": 1.0,
+                "evidence_detail": (
+                    f"{int(row['bid_count'])} bids; "
+                    f"relative spread "
+                    f"{_safe_float(row['relative_spread']):.3f}; "
+                    f"robust peer deviation "
+                    f"{_safe_float(row['robust_z']):.2f}"
+                ),
+            }
+        )
+
+    # ================================================================
+    # 3. WINNER CONCENTRATION
+    # ================================================================
+
+    _require_columns(
+        concentration,
+        {
+            "category",
+            "region",
+            "tender_count",
+            "unique_winners",
+            "top_vendor",
+            "top_vendor_wins",
+            "top_vendor_share",
+            "hhi",
+        },
+        "winner_concentration.csv",
+    )
+
+    concentration = concentration.copy()
+
+    # Concentration is deliberately a weak evidence family. A dominant
+    # winner can be perfectly legitimate in a specialized market.
+    concentration["signal"] = _robust_normalize(
+        concentration["top_vendor_share"]
+    )
+
+    for _, row in concentration.iterrows():
+
+        vendor = str(row["top_vendor"])
+
+        if vendor == "nan":
+            continue
+
+        records.append(
+            {
+                "vendor_id": vendor,
+                "related_vendor_id": "",
+                "evidence_family": "winner_concentration",
+                "signal": _clip01(row["signal"]) * 0.65,
+                "context_adjustment": 1.0,
+                "evidence_detail": (
+                    f"{int(row['top_vendor_wins'])}/"
+                    f"{int(row['tender_count'])} wins "
+                    f"({row['top_vendor_share']:.1%}) "
+                    f"within {row['category']} / {row['region']}"
+                ),
+            }
+        )
+
+    # ================================================================
+    # 4. WINNER ROTATION
+    # ================================================================
+
+    _require_columns(
+        rotation,
+        {
+            "vendor_a",
+            "vendor_b",
+            "transition_count",
+            "pair_transitions",
+            "pair_transition_share",
+            "tender_count",
+        },
+        "winner_rotation.csv",
+    )
+
+    rotation = rotation.copy()
+
+    rotation["signal"] = _robust_normalize(
+        rotation["pair_transition_share"]
+    )
+
+    for _, row in rotation.iterrows():
+
+        a = str(row["vendor_a"])
+        b = str(row["vendor_b"])
+
+        if (
+            a == "nan"
+            or b == "nan"
+            or a == b
+        ):
+            continue
+
+        signal = _clip01(
+            row["signal"]
+        )
+
+        detail = (
+            f"{int(row['pair_transitions'])} winner transitions "
+            f"across {int(row['transition_count'])} observed transitions; "
+            f"pair transition share "
+            f"{_safe_float(row['pair_transition_share']):.1%}"
+        )
+
+        records.append(
+            {
+                "vendor_id": a,
+                "related_vendor_id": b,
+                "evidence_family": "winner_rotation",
+                "signal": signal,
+                "context_adjustment": 1.0,
+                "evidence_detail": detail,
+            }
+        )
+
+        records.append(
+            {
+                "vendor_id": b,
+                "related_vendor_id": a,
+                "evidence_family": "winner_rotation",
+                "signal": signal,
+                "context_adjustment": 1.0,
+                "evidence_detail": detail,
+            }
+        )
+
+    # ================================================================
+    # 5. TEMPORAL BEHAVIOR
+    # ================================================================
+
+    _require_columns(
+        temporal,
+        {
+            "vendor_id",
+            "total_tenders",
+            "early_tenders",
+            "late_tenders",
+            "standardized_win_shift",
+            "sample_weight",
+            "behavioral_shift",
+        },
+        "temporal_behavior.csv",
+    )
+
+    temporal = temporal.copy()
+
+    temporal["signal"] = _robust_normalize(
+        temporal["behavioral_shift"]
+    )
+
+    for _, row in temporal.iterrows():
+
+        vendor = str(row["vendor_id"])
+
+        if vendor == "nan":
+            continue
+
+        records.append(
+            {
+                "vendor_id": vendor,
+                "related_vendor_id": "",
+                "evidence_family": "temporal",
+                "signal": _clip01(row["signal"]),
+                "context_adjustment": 1.0,
+                "evidence_detail": (
+                    f"{int(row['early_tenders'])} early / "
+                    f"{int(row['late_tenders'])} late tenders; "
+                    f"win-rate shift "
+                    f"{_safe_float(row.get('win_rate_shift')):+.1%}; "
+                    f"standardized shift "
+                    f"{_safe_float(row['standardized_win_shift']):.2f}"
+                ),
+            }
+        )
+
+    # ================================================================
+    # 6. GEOGRAPHIC BEHAVIOR
+    # ================================================================
+
+    _require_columns(
+        geographic,
+        {
+            "vendor_id",
+            "total_participation",
+            "regions_active",
+            "dominant_region",
+            "dominant_region_tenders",
+            "dominant_region_share",
+            "dominant_region_win_share",
+        },
+        "geographic_behavior.csv",
+    )
+
+    geographic = geographic.copy()
+
+    # Geographic concentration is contextual, not intrinsically bad.
+    # Use the gap between participation concentration and win
+    # concentration as the signal where possible.
+    geographic["signal_raw"] = (
+        geographic["dominant_region_win_share"]
+        - geographic["dominant_region_share"]
+    ).abs()
+
+    geographic["signal"] = _robust_normalize(
+        geographic["signal_raw"]
+    )
+
+    for _, row in geographic.iterrows():
+
+        vendor = str(row["vendor_id"])
+
+        if vendor == "nan":
+            continue
+
+        records.append(
+            {
+                "vendor_id": vendor,
+                "related_vendor_id": "",
+                "evidence_family": "geographic",
+                "signal": _clip01(row["signal"]),
+                "context_adjustment": 1.0,
+                "evidence_detail": (
+                    f"active in {int(row['regions_active'])} regions; "
+                    f"dominant region {row['dominant_region']} accounts for "
+                    f"{_safe_float(row['dominant_region_share']):.1%} "
+                    f"of participation and "
+                    f"{_safe_float(row['dominant_region_win_share']):.1%} "
+                    f"of wins"
+                ),
+            }
+        )
+
+    result = pd.DataFrame(records)
+
+    if result.empty:
+        raise RuntimeError(
+            "Evidence extraction produced zero records."
+        )
+
+    result["signal"] = pd.to_numeric(
+        result["signal"],
+        errors="coerce",
+    ).fillna(0.0).clip(0.0, 1.0)
+
+    result["context_adjustment"] = pd.to_numeric(
+        result["context_adjustment"],
+        errors="coerce",
+    ).fillna(1.0).clip(0.0, 1.0)
+
+    return result
+
+
+# ---------------------------------------------------------------------
+# CONVERGENCE
+# ---------------------------------------------------------------------
+
+def _family_signal(
+    group: pd.DataFrame,
+    family: str,
+) -> float:
+
+    rows = group[
+        group["evidence_family"] == family
+    ]
+
+    if rows.empty:
+        return 0.0
+
+    return _safe_float(
+        rows["signal"].max()
+    )
+
+
+def _convergence_strength(
+    family_signals: dict[str, float],
+) -> float:
+    """
+    Independent evidence families create a diminishing-return
+    convergence bonus.
+
+    One family:
+        weak breadth
+
+    Three families:
+        meaningful convergence
+
+    Five or six:
+        strong multi-dimensional convergence
+
+    This prevents dozens of observations from one detector from
+    masquerading as independent evidence.
+    """
+
+    active = sum(
+        1
+        for value in family_signals.values()
+        if value >= 0.25
+    )
+
+    if active <= 0:
+        return 0.0
+
+    return 1.0 - math.exp(
+        -0.58 * active
+    )
+
+
+def _case_context_factor(
+    group: pd.DataFrame,
+) -> float:
+    """
+    Determine how much contextual suppression should apply.
+
+    Pair-level contextual adjustments are already applied to
+    co-occurrence. This second stage only applies a conservative
+    vendor-level safeguard.
+
+    Strong independent evidence should largely overcome contextual
+    suppression.
+    """
+
+    co = group[
+        group["evidence_family"] == "cooccurrence"
+    ]
+
+    if co.empty:
+        return 1.0
+
+    co_context = _safe_float(
+        co["context_adjustment"].median(),
+        1.0,
+    )
+
+    families = set(
+        group["evidence_family"]
+    )
+
+    # If co-occurrence is the only evidence family, context matters a lot.
+    if families <= {"cooccurrence"}:
+        return max(0.45, co_context)
+
+    # Two independent families still deserve substantial suppression
+    # where there is a strong contextual explanation.
+    if len(families) == 2:
+        return 0.70 + (0.30 * co_context)
+
+    # Three or more independent families mean the contextual explanation
+    # is becoming insufficient by itself.
+    if len(families) == 3:
+        return 0.82 + (0.18 * co_context)
+
+    return 0.95 + (0.05 * co_context)
+
+
+def build_investigation_cases(
+    evidence: pd.DataFrame,
+) -> pd.DataFrame:
+
+    rows = []
+
+    for vendor_id, group in evidence.groupby(
+        "vendor_id"
+    ):
+
+        family_signals = {
+            family: _family_signal(
+                group,
+                family,
+            )
+            for family in FAMILY_WEIGHTS
+        }
+
+        active = {
+            family: signal
+            for family, signal in family_signals.items()
+            if signal >= 0.25
+        }
+
+        if not active:
+            continue
+
+        # Weighted evidence strength.
+        numerator = 0.0
+        denominator = 0.0
+
+        for family, signal in active.items():
+            weight = FAMILY_WEIGHTS[family]
+
+            numerator += (
+                weight * signal
+            )
+
+            denominator += weight
+
+        weighted_strength = (
+            numerator / denominator
+            if denominator
+            else 0.0
+        )
+
+        strongest = max(
+            active.values()
+        )
+
+        convergence = _convergence_strength(
+            family_signals
+        )
+
+        family_count = len(active)
+
+        # Independent-family convergence is deliberately separated
+        # from raw detector strength.
+        raw_priority = (
+            0.52 * weighted_strength
+            + 0.23 * strongest
+            + 0.25 * convergence
+        )
+
+        context_factor = _case_context_factor(
+            group
+        )
+
+        priority = round(
+            100
+            * _clip01(
+                raw_priority
+                * context_factor
+            )
+        )
+
+        related = (
+            group[
+                group["related_vendor_id"]
+                .astype(str)
+                .str.len()
+                > 0
+            ]["related_vendor_id"]
+            .astype(str)
+            .drop_duplicates()
+            .tolist()
+        )
+
+        # Preserve the strongest observation from each family.
+        evidence_rows = (
+            group.sort_values(
+                "signal",
+                ascending=False,
+            )
+            .drop_duplicates(
+                subset=["evidence_family"]
+            )
+            .sort_values(
+                "signal",
+                ascending=False,
+            )
+            .head(8)
+        )
+
+        evidence_summary = " | ".join(
+            f"{row.evidence_family}: "
+            f"{row.evidence_detail}"
+            for row in evidence_rows.itertuples()
+        )
+
+        rows.append(
+            {
+                "case_id": "",
+                "vendor_id": str(vendor_id),
+                "related_vendors": ",".join(
+                    related
+                ),
+                "investigation_priority": priority,
+                "evidence_family_count": family_count,
+                "evidence_families": ",".join(
+                    sorted(active)
+                ),
+                "strongest_signal": round(
+                    strongest,
+                    4,
+                ),
+                "weighted_evidence_strength": round(
+                    weighted_strength,
+                    4,
+                ),
+                "convergence_strength": round(
+                    convergence,
+                    4,
+                ),
+                "context_factor": round(
+                    context_factor,
+                    4,
+                ),
+                "evidence_summary": evidence_summary,
+            }
+        )
+
+    result = pd.DataFrame(rows)
+
+    if result.empty:
+        raise RuntimeError(
+            "No investigation cases were constructed."
+        )
+
+    result = result.sort_values(
+        [
+            "investigation_priority",
+            "evidence_family_count",
+            "weighted_evidence_strength",
+        ],
+        ascending=False,
+    ).reset_index(
+        drop=True
+    )
+
+    result["case_id"] = [
+        f"CASE-{i:04d}"
+        for i in range(
+            1,
+            len(result) + 1,
+        )
+    ]
+
+    return result
+
+
+# ---------------------------------------------------------------------
+# SCENARIO VALIDATION
+# ---------------------------------------------------------------------
+
+def validate_planted_scenarios(
+    evidence: pd.DataFrame,
+    cases: pd.DataFrame,
+) -> None:
+    """
+    Check that the synthetic benchmark's known scenarios appear in
+    sensible detector families.
+
+    These are not claims about real-world misconduct. They are tests
+    of whether the synthetic benchmark exercises the intended system
+    behavior.
+    """
+
+    scenario_groups = {
+        "REPEATED_NETWORK": {
+            "vendors": {
+                "V0001",
+                "V0024",
+                "V0091",
+            },
+            "families": {
+                "cooccurrence",
+            },
+        },
+        "COVER_BIDDING": {
+            "vendors": {
+                "V0042",
+                "V0043",
+            },
+            "families": {
+                "cooccurrence",
+                "price",
+            },
+        },
+        "BID_ROTATION": {
+            "vendors": {
+                "V0051",
+                "V0052",
+                "V0053",
+            },
+            "families": {
+                "cooccurrence",
+                "winner_rotation",
+            },
+        },
+        "GEOGRAPHIC_ALLOCATION": {
+            "vendors": {
+                "V0061",
+                "V0062",
+                "V0063",
+            },
+            "families": {
+                "geographic",
+            },
+        },
+        "TIGHT_PRICE_CLUSTER": {
+            "vendors": {
+                "V0071",
+                "V0072",
+                "V0073",
+                "V0074",
+            },
+            "families": {
+                "cooccurrence",
+                "price",
+            },
+        },
+    }
+
+    print("\n" + "=" * 72)
+    print("PLANTED SCENARIO VALIDATION")
+    print("=" * 72)
+
+    for name, specification in scenario_groups.items():
+
+        vendors = specification["vendors"]
+        expected = specification["families"]
+
+        found_families = set(
+            evidence[
+                evidence["vendor_id"].isin(
+                    vendors
+                )
+            ]["evidence_family"]
+        )
+
+        # We only require at least one of the intended independent
+        # families. Synthetic detectors can legitimately miss a secondary
+        # signal on a particular vendor.
+        overlap = found_families & expected
+
+        print(
+            f"{name:<24} "
+            f"expected={','.join(sorted(expected)):<32} "
+            f"found={','.join(sorted(found_families))}"
+        )
+
+        assert overlap, (
+            f"{name}: none of the expected evidence families "
+            f"were found"
+        )
+
+    # Legitimate specialization is explicitly a negative control.
+    legit_vendors = {
+        "V0010",
+        "V0020",
+    }
+
+    legit = evidence[
+        evidence["vendor_id"].isin(
+            legit_vendors
+        )
+    ]
+
+    legit_co = legit[
+        legit["evidence_family"]
+        == "cooccurrence"
+    ]
+
+    assert not legit_co.empty, (
+        "Legitimate specialization negative control "
+        "has no co-occurrence evidence."
+    )
+
+    mean_adjustment = _safe_float(
+        legit_co["context_adjustment"].mean()
+    )
+
+    print(
+        f"\nLEGITIMATE_SPECIALIZATION "
+        f"context adjustment={mean_adjustment:.3f}"
+    )
+
+    # The contextual detector must actually reduce the raw relationship.
+    assert mean_adjustment < 1.0, (
+        "Legitimate specialization was not context-adjusted."
+    )
+
+    legit_priorities = cases[
+        cases["vendor_id"].isin(
+            legit_vendors
+        )
+    ]["investigation_priority"]
+
+    assert not legit_priorities.empty, (
+        "Legitimate specialization vendors disappeared "
+        "from case output."
+    )
+
+    print(
+        "LEGITIMATE_SPECIALIZATION "
+        f"max priority={int(legit_priorities.max())}"
+    )
+
+    print(
+        "\n[PASS] planted scenario validation completed"
+    )
+
+
+# ---------------------------------------------------------------------
+# SELF TEST
+# ---------------------------------------------------------------------
+
+def self_test(
+    evidence: pd.DataFrame,
+    cases: pd.DataFrame,
+) -> None:
+
+    required_evidence = {
+        "vendor_id",
+        "related_vendor_id",
+        "evidence_family",
+        "signal",
+        "context_adjustment",
+        "evidence_detail",
+    }
+
+    required_cases = {
+        "case_id",
+        "vendor_id",
+        "investigation_priority",
+        "evidence_family_count",
+        "evidence_families",
+        "strongest_signal",
+        "weighted_evidence_strength",
+        "convergence_strength",
+        "context_factor",
+        "evidence_summary",
+    }
+
+    assert required_evidence.issubset(
+        evidence.columns
+    )
+
+    assert required_cases.issubset(
+        cases.columns
+    )
+
+    assert evidence["signal"].between(
+        0,
+        1,
+    ).all()
+
+    assert evidence[
+        "context_adjustment"
+    ].between(
+        0,
+        1,
+    ).all()
+
+    assert cases[
+        "investigation_priority"
+    ].between(
+        0,
+        100,
+    ).all()
+
+    assert cases[
+        "evidence_family_count"
+    ].ge(1).all()
+
+    assert cases[
+        "case_id"
+    ].is_unique
+
+    assert cases[
+        "vendor_id"
+    ].notna().all()
+
+    families = set(
+        evidence["evidence_family"]
+    )
+
+    expected_families = {
+        "cooccurrence",
+        "price",
+        "winner_concentration",
+        "winner_rotation",
+        "temporal",
+        "geographic",
+    }
+
+    assert expected_families.issubset(
+        families
+    ), (
+        "Evidence integration incomplete. "
+        f"Missing: {sorted(expected_families - families)}"
+    )
+
+    # Multi-family evidence must exist.
+    assert (
+        cases["evidence_family_count"].max()
+        >= 3
+    )
+
+    print(
+        "\n[PASS] convergence self-test completed"
+    )
+
+
+# ---------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------
+
+def run() -> pd.DataFrame:
+
+    evidence = build_evidence_records()
+
+    cases = build_investigation_cases(
+        evidence
+    )
+
+    evidence_path = (
+        BASE / "evidence_records.csv"
+    )
+
+    cases_path = (
+        BASE / "investigation_cases.csv"
+    )
+
+    evidence.to_csv(
+        evidence_path,
+        index=False,
+    )
+
+    cases.to_csv(
+        cases_path,
+        index=False,
+    )
+
+    print("=" * 72)
+    print("VERITAS EVIDENCE CONVERGENCE ENGINE")
+    print("=" * 72)
+
+    print(
+        f"Evidence records: "
+        f"{len(evidence):,}"
+    )
+
+    print(
+        f"Investigation cases: "
+        f"{len(cases):,}"
+    )
+
+    print("\nEvidence families:")
+    print(
+        evidence[
+            "evidence_family"
+        ]
+        .value_counts()
+        .to_string()
+    )
+
+    print("\nTop investigation cases:")
+    print(
+        cases[
+            [
+                "case_id",
+                "vendor_id",
+                "investigation_priority",
+                "evidence_family_count",
+                "evidence_families",
+                "weighted_evidence_strength",
+                "convergence_strength",
+                "context_factor",
+            ]
+        ]
+        .head(20)
+        .to_string(
+            index=False
+        )
+    )
+
+    print("\nOutputs:")
+    print(
+        f"[OK] {evidence_path}"
+    )
+
+    print(
+        f"[OK] {cases_path}"
+    )
+
+    self_test(
+        evidence,
+        cases,
+    )
+
+    validate_planted_scenarios(
+        evidence,
+        cases,
+    )
+
+    return cases
+
+
+if __name__ == "__main__":
+    run()

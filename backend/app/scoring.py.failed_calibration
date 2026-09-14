@@ -116,24 +116,6 @@ def robust_unit(
     return ((x - low) / (high - low)).clip(0, 1)
 
 
-
-def robust_unit(
-    series: pd.Series,
-    low: float,
-    high: float,
-) -> pd.Series:
-    """
-    Map a detector's native signal into [0, 1] using explicit
-    domain thresholds rather than global dataset percentiles.
-    """
-    x = pd.to_numeric(series, errors="coerce").fillna(0.0)
-
-    if high <= low:
-        return pd.Series(0.0, index=x.index)
-
-    return ((x - low) / (high - low)).clip(0, 1)
-
-
 def build_evidence() -> pd.DataFrame:
     records: list[dict] = []
 
@@ -225,6 +207,11 @@ def build_evidence() -> pd.DataFrame:
         1.00,
     )
 
+    price_strength = (
+        0.75 * z_strength
+        + 0.25 * tight_strength
+    ).clip(0, 1)
+
     bids = load_csv(
         "bids.csv"
     )[[
@@ -238,34 +225,9 @@ def build_evidence() -> pd.DataFrame:
         how="left",
     )
 
-    # Calculate the signal after the merge so the signal index
-    # exactly matches the merged price dataframe.
-    price_z = pd.to_numeric(
-        price["robust_z"],
-        errors="coerce",
-    ).fillna(0)
-
-    price_tightness = pd.to_numeric(
-        price["tightness_percentile"],
-        errors="coerce",
-    ).fillna(0)
-
-    price_strength = (
-        0.75 * robust_unit(
-            price_z,
-            1.5,
-            4.0,
-        )
-        + 0.25 * robust_unit(
-            price_tightness,
-            0.90,
-            1.00,
-        )
-    ).clip(0, 1)
-
     for i, row in price.iterrows():
         strength = float(
-            price_strength.loc[i]
+            price_strength.iloc[i]
         )
 
         if strength < 0.10:
@@ -447,20 +409,10 @@ def build_evidence() -> pd.DataFrame:
         errors="coerce",
     ).fillna(0)
 
-    # Concentration is a supporting signal, not a standalone accusation.
-    #
-    # In this benchmark the observed top-vendor share is much lower
-    # than 20% for most peer groups:
-    #   median ~= 9%
-    #   75th percentile ~= 14%
-    #   maximum ~= 26%
-    #
-    # Therefore 15% is already meaningful concentration and 30% is
-    # treated as extreme. The family itself remains low-weight.
     concentration_strength = robust_unit(
         share,
-        0.15,
-        0.30,
+        0.20,
+        0.80,
     )
 
     for i, row in concentration.iterrows():
@@ -491,370 +443,6 @@ def build_evidence() -> pd.DataFrame:
         )
 
     return evidence
-
-
-def build_cases(
-    evidence: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Collapse detector evidence into vendor-level investigation cases.
-
-    The scoring model rewards:
-      1. strong individual evidence,
-      2. convergence across independent evidence families,
-      3. repeated evidence for the same vendor.
-
-    A single detector family is deliberately capped so that one noisy
-    observation cannot dominate the investigation queue.
-
-    Contextual adjustment is applied conservatively: when a vendor's
-    strongest evidence occurs inside a legitimately specialized market,
-    the resulting case is suppressed rather than treated as suspicious
-    merely because the market is unusual.
-    """
-
-    if evidence.empty:
-        raise ValueError("Cannot build cases from empty evidence.")
-
-    required_columns = {
-        "vendor_id",
-        "evidence_family",
-        "evidence_strength",
-        "family_weight",
-        "context_adjustment",
-        "adjusted_strength",
-        "explanation",
-    }
-
-    missing = required_columns - set(evidence.columns)
-
-    if missing:
-        raise ValueError(
-            f"Evidence is missing required columns: {sorted(missing)}"
-        )
-
-    df = evidence.copy()
-
-    numeric_columns = [
-        "evidence_strength",
-        "family_weight",
-        "context_adjustment",
-        "adjusted_strength",
-    ]
-
-    for column in numeric_columns:
-        df[column] = pd.to_numeric(
-            df[column],
-            errors="coerce",
-        ).fillna(0.0)
-
-    df["evidence_strength"] = df[
-        "evidence_strength"
-    ].clip(0, 1)
-
-    df["family_weight"] = df[
-        "family_weight"
-    ].clip(0, 1)
-
-    df["context_adjustment"] = df[
-        "context_adjustment"
-    ].clip(0, 1)
-
-    df["adjusted_strength"] = df[
-        "adjusted_strength"
-    ].clip(0, 1)
-
-    # ----------------------------------------------------------------
-    # Aggregate repeated observations within each evidence family.
-    #
-    # Multiple observations from the same family should increase
-    # confidence, but with diminishing returns. This prevents a vendor
-    # appearing in hundreds of tenders from automatically dominating
-    # the queue.
-    # ----------------------------------------------------------------
-    family_rows = []
-
-    for (vendor_id, family), group in df.groupby(
-        ["vendor_id", "evidence_family"],
-        sort=False,
-    ):
-        strengths = group["adjusted_strength"].sort_values(
-            ascending=False
-        ).to_numpy()
-
-        if len(strengths) == 0:
-            continue
-
-        # Diminishing-return aggregation:
-        # strongest observation matters most, subsequent observations
-        # add progressively less.
-        family_strength = 0.0
-        remaining = 1.0
-
-        for strength in strengths[:8]:
-            contribution = float(strength) * remaining
-            family_strength += contribution
-            remaining *= 0.35
-
-        family_strength = float(
-            np.clip(family_strength, 0, 1)
-        )
-
-        family_weight = float(
-            group["family_weight"].iloc[0]
-        )
-
-        context_adjustment = float(
-            group["context_adjustment"].min()
-        )
-
-        explanation = str(
-            group.sort_values(
-                "adjusted_strength",
-                ascending=False,
-            ).iloc[0]["explanation"]
-        )
-
-        family_rows.append(
-            {
-                "vendor_id": str(vendor_id),
-                "evidence_family": str(family),
-                "family_strength": family_strength,
-                "family_weight": family_weight,
-                "context_adjustment": context_adjustment,
-                "explanation": explanation,
-                "observation_count": len(group),
-            }
-        )
-
-    family_df = pd.DataFrame(family_rows)
-
-    if family_df.empty:
-        raise RuntimeError(
-            "No vendor-level evidence could be aggregated."
-        )
-
-    # ----------------------------------------------------------------
-    # Build one investigation case per vendor.
-    # ----------------------------------------------------------------
-    cases = []
-
-    for vendor_id, group in family_df.groupby(
-        "vendor_id",
-        sort=False,
-    ):
-        group = group.sort_values(
-            "family_strength",
-            ascending=False,
-        )
-
-        active = group[
-            group["family_strength"] >= 0.10
-        ].copy()
-
-        if active.empty:
-            continue
-
-        family_count = len(active)
-
-        # Weighted evidence strength.
-        weighted_numerator = float(
-            (
-                active["family_strength"]
-                * active["family_weight"]
-            ).sum()
-        )
-
-        weighted_denominator = float(
-            active["family_weight"].sum()
-        )
-
-        if weighted_denominator > 0:
-            weighted_strength = (
-                weighted_numerator
-                / weighted_denominator
-            )
-        else:
-            weighted_strength = 0.0
-
-        weighted_strength = float(
-            np.clip(weighted_strength, 0, 1)
-        )
-
-        strongest = float(
-            active["family_strength"].max()
-        )
-
-        # Independent-family convergence.
-        #
-        # 1 family  -> weak
-        # 2 families -> meaningful
-        # 3+ families -> increasingly strong
-        convergence_strength = float(
-            1.0
-            - math.exp(
-                -0.58 * max(family_count - 0.25, 0)
-            )
-        )
-
-        convergence_strength = float(
-            np.clip(convergence_strength, 0, 1)
-        )
-
-        # Context is intentionally conservative.
-        #
-        # If ANY strong evidence is substantially explained by a
-        # specialized market, the case should be discounted.
-        context_factor = float(
-            active["context_adjustment"].min()
-        )
-
-        # Base score rewards convergence without allowing a single
-        # detector to dominate.
-        if family_count == 1:
-            raw_strength = (
-                0.55 * weighted_strength
-                + 0.45 * strongest
-            )
-
-            # Hard ceiling for single-family evidence.
-            raw_strength = min(
-                raw_strength,
-                SINGLE_FAMILY_CAP,
-            )
-
-        elif family_count == 2:
-            raw_strength = (
-                0.42 * weighted_strength
-                + 0.18 * strongest
-                + 0.40 * convergence_strength
-            )
-
-        else:
-            raw_strength = (
-                0.52 * weighted_strength
-                + 0.18 * strongest
-                + 0.30 * convergence_strength
-            )
-
-        raw_strength = float(
-            np.clip(raw_strength, 0, 1)
-        )
-
-        # Apply contextual suppression.
-        #
-        # SPECIALIZATION_FLOOR prevents legitimate narrow markets
-        # from being erased completely, while still reducing their
-        # investigation priority.
-        final_strength = (
-            raw_strength
-            * (
-                SPECIALIZATION_FLOOR
-                + (
-                    1.0 - SPECIALIZATION_FLOOR
-                ) * context_factor
-            )
-        )
-
-        # Additional suppression for strongly contextualized cases.
-        if context_factor < 0.75:
-            final_strength *= (
-                SPECIALIZATION_FLOOR
-                + (
-                    1.0 - SPECIALIZATION_FLOOR
-                ) * context_factor
-            )
-
-        final_strength = float(
-            np.clip(final_strength, 0, 1)
-        )
-
-        families = ", ".join(
-            active.sort_values(
-                "family_strength",
-                ascending=False,
-            )["evidence_family"].tolist()
-        )
-
-        explanations = " | ".join(
-            active.sort_values(
-                "family_strength",
-                ascending=False,
-            )["explanation"]
-            .head(5)
-            .tolist()
-        )
-
-        cases.append(
-            {
-                "vendor_id": str(vendor_id),
-                "investigation_priority": int(
-                    round(100 * final_strength)
-                ),
-                "evidence_family_count": int(
-                    family_count
-                ),
-                "evidence_families": families,
-                "weighted_evidence_strength": round(
-                    weighted_strength,
-                    4,
-                ),
-                "strongest_evidence_strength": round(
-                    strongest,
-                    4,
-                ),
-                "convergence_strength": round(
-                    convergence_strength,
-                    4,
-                ),
-                "context_factor": round(
-                    context_factor,
-                    4,
-                ),
-                "raw_strength": round(
-                    raw_strength,
-                    4,
-                ),
-                "evidence_count": int(
-                    active["observation_count"].sum()
-                ),
-                "explanations": explanations,
-            }
-        )
-
-    cases_df = pd.DataFrame(cases)
-
-    if cases_df.empty:
-        raise RuntimeError(
-            "No investigation cases were generated."
-        )
-
-    # Stable deterministic ordering.
-    cases_df = cases_df.sort_values(
-        [
-            "investigation_priority",
-            "evidence_family_count",
-            "weighted_evidence_strength",
-            "vendor_id",
-        ],
-        ascending=[
-            False,
-            False,
-            False,
-            True,
-        ],
-    ).reset_index(drop=True)
-
-    cases_df.insert(
-        0,
-        "case_id",
-        [
-            f"CASE-{i:04d}"
-            for i in range(1, len(cases_df) + 1)
-        ],
-    )
-
-    return cases_df
 
 def self_test(
     evidence: pd.DataFrame,
