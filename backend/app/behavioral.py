@@ -652,16 +652,58 @@ def build_relationship_evidence(
         1.0,
     )
 
-    # Penalize relationships that are almost entirely confined
-    # to one specialized market.
+    # ------------------------------------------------------------
+    # Contextual specialization model
+    # ------------------------------------------------------------
     #
-    # This is NOT a blanket "specialized = innocent" rule.
-    # It simply reduces the relationship-only evidence when
-    # the relationship has no cross-market footprint.
-    result["specialization_discount"] = (
+    # Market concentration alone is not enough to explain away a
+    # relationship. A legitimate specialist can repeatedly appear
+    # with another supplier simply because both operate in the same
+    # narrow market.
+    #
+    # Conversely, specialization should NOT suppress a relationship
+    # when the pair also exhibits unusually strong conditional
+    # enrichment or a positive conditional win effect.
+    #
+    # Therefore context has two components:
+    #
+    #   1. market_context:
+    #        how strongly the relationship is explained by operating
+    #        in the same specialized market.
+    #
+    #   2. behavioral_context:
+    #        whether independent behavioral evidence remains unusual
+    #        after accounting for that market structure.
+    #
+    # This is a contextualization mechanism, not an innocence label.
+    # A specialized market can still produce high-risk evidence when
+    # multiple independent behavioral signals remain abnormal.
+    market_context = np.clip(
         1.0
-        - 0.55
-        * result["market_concentration"]
+        - 0.65
+        * result["market_concentration"],
+        0.25,
+        1.0,
+    )
+
+    behavioral_context = np.clip(
+        0.35
+        + 0.65
+        * (
+            0.60
+            * result["enrichment_signal"]
+            + 0.40
+            * result["win_effect_signal"]
+        ),
+        0.35,
+        1.0,
+    )
+
+    result["specialization_discount"] = np.clip(
+        market_context
+        * behavioral_context,
+        0.0,
+        1.0,
     )
 
     # Strong relationships that span several markets receive
