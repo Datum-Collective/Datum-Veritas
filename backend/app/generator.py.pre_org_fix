@@ -186,8 +186,8 @@ DEPARTMENTS = [
     ("D16", "Infrastructure Development Division", "KA-CENTRAL"),
     ("D17", "Higher Education Procurement Division", "KA-BENGALURU"),
     ("D18", "Industrial Development Division", "KA-CENTRAL"),
-    ("D19", "Forest Infrastructure Division", "TN-NORTH"),
-    ("D20", "Public Health Engineering Division", "AP-SOUTH"),
+    ("D19", "Forest Infrastructure Division", "KA-NORTH"),
+    ("D20", "Public Health Engineering Division", "KA-SOUTH"),
 ]
 
 
@@ -307,65 +307,20 @@ def procurement_method(
 # ORGANIZATIONS
 # ============================================================
 
-def generate_organizations() -> pd.DataFrame:
-    """
-    Generate parent procurement organizations.
-
-    Departments are operational units underneath these organizations.
-    Keeping the two levels separate prevents organization-level analysis
-    from accidentally treating every department as an organization.
-    """
-
-    organizations = [
-        ("O01", "Northern State Procurement Authority", "KA-NORTH"),
-        ("O02", "Southern State Procurement Authority", "KA-SOUTH"),
-        ("O03", "Central State Procurement Authority", "KA-CENTRAL"),
-        ("O04", "Bengaluru State Procurement Authority", "KA-BENGALURU"),
-        ("O05", "Tamil Nadu Regional Procurement Authority", "TN-NORTH"),
-        ("O06", "Andhra Regional Procurement Authority", "AP-SOUTH"),
-    ]
-
+def generate_departments() -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "organization_id": organization_id,
+                "organization_id": department_id,
+                "department_id": department_id,
                 "organization_name": name,
-                "organization_type": "STATE_PROCUREMENT_AUTHORITY",
+                "department_name": name,
+                "organization_type": "STATE_PROCUREMENT_ENTITY",
                 "region": region,
             }
-            for organization_id, name, region in organizations
+            for department_id, name, region in DEPARTMENTS
         ]
     )
-
-
-def generate_departments() -> pd.DataFrame:
-    """
-    Generate departments and map each department to its parent
-    procurement organization.
-    """
-
-    organization_by_region = {
-        "KA-NORTH": "O01",
-        "KA-SOUTH": "O02",
-        "KA-CENTRAL": "O03",
-        "KA-BENGALURU": "O04",
-        "TN-NORTH": "O05",
-        "AP-SOUTH": "O06",
-    }
-
-    rows = []
-
-    for department_id, name, region in DEPARTMENTS:
-        rows.append(
-            {
-                "department_id": department_id,
-                "department_name": name,
-                "organization_id": organization_by_region[region],
-                "region": region,
-            }
-        )
-
-    return pd.DataFrame(rows)
 
 
 # ============================================================
@@ -1920,8 +1875,6 @@ def main():
     # Normal procurement world
     # --------------------------------------------------------
 
-    organizations = generate_organizations()
-
     departments = generate_departments()
 
     vendors = generate_vendors(
@@ -2075,12 +2028,11 @@ def main():
     # --------------------------------------------------------
 
     outputs = {
-        "organizations.csv": organizations,
+        "organizations.csv": departments,
         "departments.csv": departments[
             [
                 "department_id",
                 "department_name",
-                "organization_id",
                 "region",
             ]
         ],

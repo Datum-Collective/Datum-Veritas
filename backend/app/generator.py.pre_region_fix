@@ -186,8 +186,8 @@ DEPARTMENTS = [
     ("D16", "Infrastructure Development Division", "KA-CENTRAL"),
     ("D17", "Higher Education Procurement Division", "KA-BENGALURU"),
     ("D18", "Industrial Development Division", "KA-CENTRAL"),
-    ("D19", "Forest Infrastructure Division", "TN-NORTH"),
-    ("D20", "Public Health Engineering Division", "AP-SOUTH"),
+    ("D19", "Forest Infrastructure Division", "KA-NORTH"),
+    ("D20", "Public Health Engineering Division", "KA-SOUTH"),
 ]
 
 
