@@ -91,6 +91,8 @@ def add_evidence(
     source_id: str,
     context: float = 1.0,
     persistence: float = 0.0,
+    partner_vendor_id: str | None = None,
+    enrichment: float | None = None,
 ):
 
     if family not in FAMILY_WEIGHTS:
@@ -155,6 +157,16 @@ def add_evidence(
             ),
             "family_weight": FAMILY_WEIGHTS[family],
             "explanation": explanation,
+            "partner_vendor_id": (
+                str(partner_vendor_id)
+                if partner_vendor_id is not None
+                else None
+            ),
+            "enrichment": (
+                float(enrichment)
+                if enrichment is not None
+                else None
+            ),
         }
     )
 
@@ -272,9 +284,15 @@ def build_evidence() -> pd.DataFrame:
                     f"persistence={persistence:.2f}"
                 )
 
-                for vendor in (
-                    row["vendor_a"],
-                    row["vendor_b"],
+                for vendor, partner in (
+                    (
+                        row["vendor_a"],
+                        row["vendor_b"],
+                    ),
+                    (
+                        row["vendor_b"],
+                        row["vendor_a"],
+                    ),
                 ):
 
                     add_evidence(
@@ -286,6 +304,8 @@ def build_evidence() -> pd.DataFrame:
                         f"relationship:{idx}",
                         context,
                         persistence,
+                        partner_vendor_id=str(partner),
+                        enrichment=float(enrichment),
                     )
 
     # ================================================================

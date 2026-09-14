@@ -190,7 +190,7 @@ export function Investigations({
                     className="case-family"
                     key={family}
                   >
-                    {family.replaceAll("_", " ")}
+                    {evidenceFamilyLabel(family)}
                   </span>
                 ))}
               </span>
@@ -223,7 +223,7 @@ function evidenceFamilyLabel(family: string): string {
 
   return (
     labels[family] ??
-    family.replaceAll("_", " ")
+    evidenceFamilyLabel(family)
   );
 }
 
