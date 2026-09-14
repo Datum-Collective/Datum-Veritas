@@ -211,101 +211,6 @@ export function Investigations({
   );
 }
 
-function evidenceFamilyLabel(family: string): string {
-  const labels: Record<string, string> = {
-    cooccurrence: "Co-bidding",
-    economic: "Economic",
-    temporal: "Temporal",
-    geographic: "Geographic",
-    winner_rotation: "Winner rotation",
-    winner_concentration: "Winner concentration",
-  };
-
-  return (
-    labels[family] ??
-    family.replaceAll("_", " ")
-  );
-}
-
-function formatEvidence(record: EvidenceRecord) {
-  const family = String(
-    record.evidence_family ??
-      record.family ??
-      "evidence",
-  );
-
-  const explanation = String(
-    record.explanation ??
-      record.evidence ??
-      "Evidence attached to case.",
-  );
-
-  if (family === "cooccurrence") {
-    const enrichment =
-      explanation.match(
-        /([0-9.]+)x expected/i,
-      )?.[1];
-
-    const persistence =
-      explanation.match(
-        /persistence=([0-9.]+)/i,
-      )?.[1];
-
-    return {
-      title: "Unusually frequent co-bidding",
-      metric: enrichment
-        ? `${enrichment}× expected`
-        : null,
-      detail:
-        "This vendor participated with another supplier substantially more often than expected within comparable procurement activity.",
-      persistence:
-        persistence === "1.00"
-          ? "Persistent relationship"
-          : persistence
-            ? `Persistence signal ${persistence}`
-            : null,
-    };
-  }
-
-  if (family === "economic") {
-    const compression =
-      explanation.match(
-        /compression=([0-9.]+)/i,
-      )?.[1];
-
-    const bids =
-      explanation.match(
-        /bids=([0-9]+)/i,
-      )?.[1];
-
-    const tender =
-      String(record.source_id ?? "")
-        .replace(/^economic:/i, "");
-
-    return {
-      title: "Unusually tight bid dispersion",
-      metric: bids
-        ? `${bids} bids`
-        : null,
-      detail:
-        "Bid prices were unusually close together relative to comparable procurements.",
-      persistence: compression
-        ? `Compression signal ${compression}`
-        : null,
-      tender: tender
-        ? `Tender ${tender}`
-        : null,
-    };
-  }
-
-  return {
-    title: explanation,
-    metric: null,
-    detail: null,
-    persistence: null,
-  };
-}
-
 function CaseDetailPanel({
   detail,
   evidence,
@@ -374,7 +279,7 @@ function CaseDetailPanel({
 
       <div className="case-panel-body">
         <div className="case-panel-section">
-          Evidence signals
+          Evidence families
         </div>
 
         {familyList.map((family) => (
@@ -383,7 +288,7 @@ function CaseDetailPanel({
             key={family}
           >
             <div className="evidence-card-family">
-              {evidenceFamilyLabel(family)}
+              {family.replaceAll("_", " ")}
             </div>
           </div>
         ))}
@@ -395,55 +300,26 @@ function CaseDetailPanel({
             </div>
 
             {evidence.slice(0, 5).map(
-              (record, index) => {
-                const formatted =
-                  formatEvidence(record);
-
-                return (
-                  <div
-                    className="evidence-card evidence-card-rich"
-                    key={`${record.source_id ?? record.source ?? "evidence"}-${index}`}
-                  >
-                    <div className="evidence-card-family">
-                      {evidenceFamilyLabel(
-                        String(
-                          record.evidence_family ??
-                            record.family ??
-                            "evidence",
-                        ),
-                      )}
-                    </div>
-
-                    {formatted.tender && (
-                      <div className="evidence-card-tender">
-                        {formatted.tender}
-                      </div>
-                    )}
-
-                    <div className="evidence-card-title">
-                      {formatted.title}
-                    </div>
-
-                    {formatted.metric && (
-                      <div className="evidence-card-metric">
-                        {formatted.metric}
-                      </div>
-                    )}
-
-                    {formatted.detail && (
-                      <div className="evidence-card-text">
-                        {formatted.detail}
-                      </div>
-                    )}
-
-                    {formatted.persistence && (
-                      <div className="evidence-card-meta">
-                        {formatted.persistence}
-                      </div>
-                    )}
+              (record, index) => (
+                <div
+                  className="evidence-card"
+                  key={`${record.source}-${index}`}
+                >
+                  <div className="evidence-card-family">
+                    {String(
+                      record.evidence_family ??
+                        record.family ??
+                        "evidence",
+                    ).replaceAll("_", " ")}
                   </div>
-                );
-              },
+
+                  <div className="evidence-card-text">
+                    {record.explanation ??
+                      record.evidence ??
+                      "Evidence attached to case."}
+                  </div>
+                </div>
+              ),
             )}
           </>
         )}
