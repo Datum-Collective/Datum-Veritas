@@ -227,84 +227,6 @@ function evidenceFamilyLabel(family: string): string {
   );
 }
 
-function formatEvidence(record: EvidenceRecord) {
-  const family = String(
-    record.evidence_family ??
-      record.family ??
-      "evidence",
-  );
-
-  const explanation = String(
-    record.explanation ??
-      record.evidence ??
-      "Evidence attached to case.",
-  );
-
-  if (family === "cooccurrence") {
-    const enrichment =
-      explanation.match(
-        /([0-9.]+)x expected/i,
-      )?.[1];
-
-    const persistence =
-      explanation.match(
-        /persistence=([0-9.]+)/i,
-      )?.[1];
-
-    return {
-      title: "Unusually frequent co-bidding",
-      metric: enrichment
-        ? `${enrichment}× expected`
-        : null,
-      detail:
-        "This vendor participated with another supplier substantially more often than expected within comparable procurement activity.",
-      persistence:
-        persistence === "1.00"
-          ? "Persistent relationship"
-          : persistence
-            ? `Persistence signal ${persistence}`
-            : null,
-    };
-  }
-
-  if (family === "economic") {
-    const compression =
-      explanation.match(
-        /compression=([0-9.]+)/i,
-      )?.[1];
-
-    const bids =
-      explanation.match(
-        /bids=([0-9]+)/i,
-      )?.[1];
-
-    const tender =
-      String(record.source_id ?? "")
-        .replace(/^economic:/i, "");
-
-    return {
-      title: "Unusually tight bid dispersion",
-      metric: bids
-        ? `${bids} bids`
-        : null,
-      detail:
-        "Bid prices were unusually close together relative to comparable procurements.",
-      persistence: compression
-        ? `Compression signal ${compression}`
-        : null,
-      tender: tender
-        ? `Tender ${tender}`
-        : null,
-    };
-  }
-
-  return {
-    title: explanation,
-    metric: null,
-    detail: null,
-    persistence: null,
-  };
-}
 
 function CaseDetailPanel({
   detail,
@@ -394,57 +316,210 @@ function CaseDetailPanel({
               Evidence
             </div>
 
-            {evidence.slice(0, 5).map(
-              (record, index) => {
-                const formatted =
-                  formatEvidence(record);
+           {(() => {
+             const groups = new Map<string, EvidenceRecord[]>();
 
-                return (
-                  <div
-                    className="evidence-card evidence-card-rich"
-                    key={`${record.source_id ?? record.source ?? "evidence"}-${index}`}
-                  >
-                    <div className="evidence-card-family">
-                      {evidenceFamilyLabel(
-                        String(
-                          record.evidence_family ??
-                            record.family ??
-                            "evidence",
-                        ),
-                      )}
-                    </div>
+             evidence.slice(0, 8).forEach((record) => {
+               const family = String(
+                 record.evidence_family ??
+                   record.family ??
+                   "evidence",
+               );
 
-                    {formatted.tender && (
-                      <div className="evidence-card-tender">
-                        {formatted.tender}
-                      </div>
-                    )}
+               if (!groups.has(family)) {
+                 groups.set(family, []);
+               }
 
-                    <div className="evidence-card-title">
-                      {formatted.title}
-                    </div>
+               groups.get(family)!.push(record);
+             });
 
-                    {formatted.metric && (
-                      <div className="evidence-card-metric">
-                        {formatted.metric}
-                      </div>
-                    )}
+             return Array.from(groups.entries()).map(
+               ([family, records]) => {
+                 const label =
+                   family === "cooccurrence"
+                     ? "Co-bidding"
+                     : family === "economic"
+                       ? "Economic"
+                       : family === "temporal"
+                         ? "Temporal"
+                         : family === "geographic"
+                           ? "Geographic"
+                           : family.replaceAll("_", " ");
 
-                    {formatted.detail && (
-                      <div className="evidence-card-text">
-                        {formatted.detail}
-                      </div>
-                    )}
+                 return (
+                   <div
+                     className="evidence-card evidence-card-rich evidence-family-group"
+                     key={family}
+                   >
+                     <div className="evidence-card-family">
+                       {label}
+                     </div>
 
-                    {formatted.persistence && (
-                      <div className="evidence-card-meta">
-                        {formatted.persistence}
-                      </div>
-                    )}
-                  </div>
-                );
-              },
-            )}
+                     {family === "cooccurrence" && (
+                       <>
+                         <div className="evidence-card-title">
+                           {records.length} unusual supplier relationship
+                           {records.length === 1 ? "" : "s"}
+                         </div>
+
+                         <div className="evidence-card-text">
+                           These relationships were observed substantially
+                           more often than expected within comparable
+                           procurement activity.
+                         </div>
+
+                         <div className="evidence-family-rows">
+                           {records.map((record, index) => {
+                             const explanation = String(
+                               record.explanation ??
+                                 record.evidence ??
+                                 "",
+                             );
+
+                             const enrichment =
+                               explanation.match(
+                                 /([0-9.]+)x expected/i,
+                               )?.[1];
+
+                             const persistence =
+                               explanation.match(
+                                 /persistence=([0-9.]+)/i,
+                               )?.[1];
+
+                             return (
+                               <div
+                                 className="evidence-family-row"
+                                 key={`${record.source_id ?? "relationship"}-${index}`}
+                               >
+                                 <div className="evidence-family-row-main">
+                                   {investigation.vendor_id}
+                                   <span className="evidence-family-arrow">
+                                     ↔
+                                   </span>
+                                   {String(
+                                     (record as EvidenceRecord & {
+                                       partner_vendor_id?: unknown;
+                                     }).partner_vendor_id ??
+                                       "Related supplier",
+                                   )}
+                                 </div>
+
+                                 <div className="evidence-family-row-meta">
+                                   {enrichment
+                                     ? `${enrichment}× expected`
+                                     : "Relationship signal"}
+
+                                   {persistence && (
+                                     <>
+                                       <span className="evidence-family-dot">
+                                         ·
+                                       </span>
+                                       {persistence === "1.00"
+                                         ? "Persistent relationship"
+                                         : `Persistence ${persistence}`}
+                                     </>
+                                   )}
+                                 </div>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       </>
+                     )}
+
+                     {family === "economic" && (
+                       <>
+                         <div className="evidence-card-title">
+                           {records.length} bid-dispersion signal
+                           {records.length === 1 ? "" : "s"}
+                         </div>
+
+                         <div className="evidence-card-text">
+                           Bid prices were unusually close together relative
+                           to comparable procurements.
+                         </div>
+
+                         <div className="evidence-family-rows">
+                           {records.map((record, index) => {
+                             const explanation = String(
+                               record.explanation ??
+                                 record.evidence ??
+                                 "",
+                             );
+
+                             const bids =
+                               explanation.match(
+                                 /bids=([0-9]+)/i,
+                               )?.[1];
+
+                             const compression =
+                               explanation.match(
+                                 /compression=([0-9.]+)/i,
+                               )?.[1];
+
+                             const tender = String(
+                               record.source_id ?? "",
+                             ).replace(
+                               /^economic:/i,
+                               "",
+                             );
+
+                             return (
+                               <div
+                                 className="evidence-family-row"
+                                 key={`${record.source_id ?? "economic"}-${index}`}
+                               >
+                                 <div className="evidence-family-row-main">
+                                   {tender
+                                     ? `Tender ${tender}`
+                                     : "Economic signal"}
+                                 </div>
+
+                                 <div className="evidence-family-row-meta">
+                                   {bids
+                                     ? `${bids} bids`
+                                     : "Bid-dispersion signal"}
+
+                                   {compression && (
+                                     <>
+                                       <span className="evidence-family-dot">
+                                         ·
+                                       </span>
+                                       Signal strength {compression}
+                                     </>
+                                   )}
+                                 </div>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       </>
+                     )}
+
+                     {family !== "cooccurrence" &&
+                       family !== "economic" && (
+                         <div className="evidence-family-rows">
+                           {records.map((record, index) => (
+                             <div
+                               className="evidence-family-row"
+                               key={`${record.source_id ?? "evidence"}-${index}`}
+                             >
+                               <div className="evidence-family-row-main">
+                                 {String(
+                                   record.explanation ??
+                                     record.evidence ??
+                                     "Evidence signal",
+                                 )}
+                               </div>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                   </div>
+                 );
+               },
+             );
+           })()}
           </>
         )}
       </div>

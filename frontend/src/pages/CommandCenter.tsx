@@ -199,7 +199,15 @@ export function CommandCenter({
                           className="case-family"
                           key={family}
                         >
-                          {family.replaceAll("_", " ")}
+                          {({
+                            cooccurrence: "Co-bidding",
+                            economic: "Economic",
+                            temporal: "Temporal",
+                            geographic: "Geographic",
+                            winner_rotation: "Winner rotation",
+                            winner_concentration: "Winner concentration",
+                          } as Record<string, string>)[family] ??
+                            family.replaceAll("_", " ")}
                         </span>
                       ))}
                     </span>
@@ -249,7 +257,7 @@ export function CommandCenter({
                 key={family}
               >
                 <span className="landscape-label">
-                  {family.replaceAll("_", " ")}
+                  {family}
                 </span>
 
                 <span className="landscape-track">

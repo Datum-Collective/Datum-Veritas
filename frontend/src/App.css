@@ -1467,3 +1467,466 @@ body {
   text-align: right;
 }
 
+
+/* Evidence detail: one card per evidence family, with readable internal rows. */
+.evidence-card-rich {
+  padding: 16px !important;
+}
+
+.evidence-card-rich .evidence-family {
+  margin-bottom: 7px;
+}
+
+.evidence-card-rich .evidence-title {
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.evidence-card-rich .evidence-detail {
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.evidence-relationship-list,
+.evidence-signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid #222;
+}
+
+.evidence-relationship,
+.evidence-signal {
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-relationship:last-child,
+.evidence-signal:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-relationship-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.evidence-relationship-arrow {
+  color: #777;
+}
+
+.evidence-relationship-meta {
+  display: flex;
+  gap: 18px;
+  margin-top: 6px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.evidence-signal-tender {
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.evidence-signal-title {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.evidence-signal-metric {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.evidence-signal-persistence {
+  margin-top: 5px;
+  color: #888;
+  font-size: 11px;
+}
+
+/* Grouped evidence cards */
+.evidence-card-rich {
+  padding: 16px !important;
+}
+
+.evidence-card-rich .evidence-card-family {
+  margin-bottom: 8px;
+}
+
+.evidence-card-rich .evidence-card-title {
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.evidence-card-rich .evidence-card-text {
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.evidence-relationship-list,
+.evidence-signal-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #222;
+}
+
+.evidence-relationship,
+.evidence-signal {
+  display: block;
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-relationship:last-child,
+.evidence-signal:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-relationship-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.evidence-relationship-arrow {
+  color: #777;
+}
+
+.evidence-relationship-meta {
+  display: flex;
+  gap: 18px;
+  margin-top: 6px;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.evidence-signal-tender {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.evidence-signal-title {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.evidence-signal-metric {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.evidence-signal-persistence {
+  margin-top: 5px;
+  color: #888;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Evidence family grouping */
+.evidence-family-group {
+  margin-bottom: 12px;
+  padding: 16px !important;
+}
+
+.evidence-family-group .evidence-card-family {
+  margin-bottom: 8px;
+}
+
+.evidence-family-group .evidence-card-title {
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.evidence-family-group .evidence-card-text {
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.evidence-group-list {
+  border-top: 1px solid #222;
+}
+
+.evidence-group-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-group-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-group-primary {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.evidence-group-arrow {
+  margin: 0 8px;
+  color: #777;
+}
+
+.evidence-group-secondary {
+  margin-top: 5px;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.evidence-group-separator {
+  margin: 0 8px;
+  color: #555;
+}
+
+.evidence-group-tender {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* --- Evidence family grouping --- */
+
+.evidence-family-group {
+  padding: 16px !important;
+  margin-bottom: 12px !important;
+}
+
+.evidence-family-group .evidence-card-family {
+  margin-bottom: 8px !important;
+}
+
+.evidence-family-group .evidence-card-title {
+  margin-bottom: 8px !important;
+  line-height: 1.4 !important;
+}
+
+.evidence-group-list {
+  margin-top: 16px;
+  border-top: 1px solid #222;
+}
+
+.evidence-group-row {
+  padding: 13px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-group-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-group-primary {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.evidence-group-secondary {
+  margin-top: 5px;
+  color: #999;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evidence-group-arrow {
+  color: #777;
+}
+
+.evidence-group-separator {
+  margin: 0 7px;
+  color: #555;
+}
+
+.evidence-group-tender {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Clean evidence-family presentation */
+.evidence-family-group {
+  padding: 16px !important;
+  margin-bottom: 12px !important;
+}
+
+.evidence-family-group .evidence-card-family {
+  margin-bottom: 8px !important;
+}
+
+.evidence-family-group .evidence-card-title {
+  margin-bottom: 8px !important;
+  line-height: 1.4 !important;
+}
+
+.evidence-family-group .evidence-card-text {
+  line-height: 1.5 !important;
+  margin-bottom: 14px !important;
+}
+
+.evidence-observation-list {
+  margin-top: 14px;
+  border-top: 1px solid #222;
+}
+
+.evidence-observation {
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-observation:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-observation-title {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.evidence-observation-meta {
+  margin-top: 5px;
+  color: #999;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evidence-observation-tender {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Evidence family cards */
+.evidence-family-card {
+  border: 1px solid #222;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #090909;
+}
+
+.evidence-family-label {
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 9px;
+}
+
+.evidence-family-title {
+  color: #ddd;
+  font-size: 15px;
+  line-height: 1.4;
+  margin-bottom: 7px;
+}
+
+.evidence-family-description {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.55;
+  margin-bottom: 15px;
+  max-width: 460px;
+}
+
+.evidence-family-rows {
+  border-top: 1px solid #222;
+}
+
+.evidence-family-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-family-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-row-main {
+  color: #ddd;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.evidence-row-meta {
+  color: #999;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+
+.evidence-dot {
+  color: #555;
+  margin: 0 8px;
+}
+
+/* Group evidence records by evidence family */
+.evidence-family-group {
+  padding: 16px !important;
+  margin-bottom: 12px !important;
+}
+
+.evidence-family-rows {
+  margin-top: 15px;
+  border-top: 1px solid #222;
+}
+
+.evidence-family-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #222;
+}
+
+.evidence-family-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.evidence-family-row-main {
+  color: #ddd;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.evidence-family-arrow {
+  color: #666;
+  margin: 0 7px;
+}
+
+.evidence-family-row-meta {
+  margin-top: 5px;
+  color: #999;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evidence-family-row-tender {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.evidence-family-dot {
+  color: #555;
+  margin: 0 8px;
+}
