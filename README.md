@@ -31,6 +31,9 @@ It is:
 
 > **"What behavior is unusually difficult to explain given the context?"**
 
+> **Technical deep dive:** [Backend Algorithms & Mathematics](backend/README.md) — detailed formulas, statistical models, scoring logic, regime detection, convergence and graph construction.
+
+
 ---
 
 # How Veritas Works
